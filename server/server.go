@@ -78,22 +78,27 @@ func GetCotation(ctx context.Context) (*Cotation, error) {
 	return &cotacao, nil
 }
 
-func saveCotation(c *Cotation) {
+func saveCotation(c *Cotation) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeoutDatabase)
 	defer cancel()
 
 	db, err := sql.Open("sqlite3", "cotation.db")
 	if err != nil {
-		log.Printf("erro: %v", err)
-		return
+		return err
 	}
 	defer db.Close()
 
-	_, err = db.ExecContext(ctx, "INSERT INTO cotations (bid) VALUES (?)", c.USDBRL.Bid)
+	stmt, err := db.Prepare("INSERT INTO cotations (bid) VALUES (?)")
 	if err != nil {
-		log.Printf("falha ao salvar: %v", err)
-		return
+		return err
+	}
+	defer db.Close()
+
+	_, err = stmt.Exec(ctx, c.USDBRL.Bid)
+	if err != nil {
+		log.Printf("erro: %v", err)
 	}
 
 	log.Println("cotacao salva com sucesso")
+	return nil
 }
