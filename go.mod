@@ -1,4 +1,4 @@
-module github.com/dukivt/cliente-server
+module cotation
 
 go 1.21.0
 

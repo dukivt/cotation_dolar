@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 )
@@ -18,49 +19,66 @@ const (
 
 type Cotation struct {
 	USDBRL struct {
-		Code       string `json:"code"`
-		Codein     string `json:"codein"`
-		Name       string `json:"name"`
-		High       string `json:"high"`
-		Low        string `json:"low"`
-		VarBid     string `json:"varBid"`
-		PctChange  string `json:"pctChange"`
-		Bid        string `json:"bid"`
-		Ask        string `json:"ask"`
-		Timestamp  string `json:"timestamp"`
-		CreateDate string `json:"create_date"`
+		Bid string `json:"bid"`
 	} `json:"USDBRL"`
 }
 
 func main() {
+
+	log.Println("inicializando")
+	defer log.Println("requisiçao finalizada")
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serverURL, nil)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("erro ao criar requisiçao: %v\n", err)
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("requisiçao nao foi enviada: %v\n", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+
+		}
+	}(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("servidor nao ta respondendo: %s\n", resp.Status)
+	}
 
 	var cotacao Cotation
 	err = json.NewDecoder(resp.Body).Decode(&cotacao)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("erro no json: %v\n", err)
+	}
+
+	if cotacao.USDBRL.Bid == "" {
+		log.Printf("bid nao ta retornando\n")
 	}
 
 	bid, err := strconv.ParseFloat(cotacao.USDBRL.Bid, 64)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("erro ao passar o valor %v\n", err)
 	}
 
-	err = ioutil.WriteFile("cotacao.txt", []byte(fmt.Sprintf("Dólar: %.2f", bid)), 0644)
+	file, err := os.Create("cotacao.txt")
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("erro ao criar o arquivo: %v\n", err)
+	}
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+
+		}
+	}(file)
+
+	_, err = fmt.Fprintf(file, "Dólar: %.2f", bid)
+	if err != nil {
+		log.Printf("erro ao salvar arquivo: %v\n", err)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -20,43 +21,58 @@ const (
 
 type Cotation struct {
 	USDBRL struct {
-		Code       string `json:"code"`
-		Codein     string `json:"codein"`
-		Name       string `json:"name"`
-		High       string `json:"high"`
-		Low        string `json:"low"`
-		VarBid     string `json:"varBid"`
-		PctChange  string `json:"pctChange"`
-		Bid        string `json:"bid"`
-		Ask        string `json:"ask"`
-		Timestamp  string `json:"timestamp"`
-		CreateDate string `json:"create_date"`
+		Bid string `json:"bid"`
 	} `json:"USDBRL"`
 }
 
 func main() {
+
+	db, err := sql.Open("sqlite3", "cotation.db")
+	if err != nil {
+		log.Fatalf("Error opening database: %v\n", err)
+	}
+	defer func(db *sql.DB) {
+		err := db.Close()
+		if err != nil {
+
+		}
+	}(db)
+
+	_, err = db.Exec("CREATE TABLE IF NOT EXISTS cotations (bid TEXT);")
+	if err != nil {
+		log.Fatalf("Error creating cotations table: %v\n", err)
+	}
+
 	http.HandleFunc("/cotacao", handleCotationRequest)
 	log.Fatal(http.ListenAndServe(port, nil))
 }
 
-func handleCotationRequest(w http.ResponseWriter, r *http.Request) {
+func handleCotationRequest(w http.ResponseWriter, _ *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	cotation, err := GetCotation(ctx)
+	cotation, err := getCotation(ctx)
 	if err != nil {
-		log.Printf("erro: %v", err)
+		log.Printf("error: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
-	saveCotation(cotation)
+	err = saveCotation(cotation)
+	if err != nil {
+		log.Printf("error saving cotation: %v", err)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(cotation)
+	err = json.NewEncoder(w).Encode(cotation)
+	if err != nil {
+		log.Printf("error encoding cotation: %v", err)
+		return
+	}
 }
 
-func GetCotation(ctx context.Context) (*Cotation, error) {
+func getCotation(ctx context.Context) (*Cotation, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, cotationURL, nil)
 	if err != nil {
 		return nil, err
@@ -67,7 +83,12 @@ func GetCotation(ctx context.Context) (*Cotation, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+
+		}
+	}(resp.Body)
 
 	var cotacao Cotation
 	err = json.NewDecoder(resp.Body).Decode(&cotacao)
@@ -86,19 +107,28 @@ func saveCotation(c *Cotation) error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func(db *sql.DB) {
+		err := db.Close()
+		if err != nil {
+
+		}
+	}(db)
 
 	stmt, err := db.Prepare("INSERT INTO cotations (bid) VALUES (?)")
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func(stmt *sql.Stmt) {
+		err := stmt.Close()
+		if err != nil {
+		}
+	}(stmt)
 
-	_, err = stmt.Exec(ctx, c.USDBRL.Bid)
+	_, err = stmt.ExecContext(ctx, c.USDBRL.Bid)
 	if err != nil {
-		log.Printf("erro: %v", err)
+		return err
 	}
 
-	log.Println("cotacao salva com sucesso")
+	log.Println("Cotação salva com sucesso")
 	return nil
 }
